@@ -1,0 +1,2 @@
+pdb_path,antibody_id,pdb_id,heavy_chain,light_chain
+./pdbs/example_fab.pdb,example_fab,example,H,L

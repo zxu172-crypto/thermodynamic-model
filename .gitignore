@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+*.csv
+!examples/manifest_template.csv
+*.pdb
+*.cif
+outputs/
