@@ -1,77 +1,12 @@
 # thermodynamic model
 
-GitHub-ready candidate for **Method 01: PyRosetta
-Structure-Thermodynamic Nucleation Workflow**, restricted to the standalone
-**Hydrophobic-Curvature Nucleation Proxy (HCNP)** branch.
+This repository contains a thermodynamic model for screening antibody
+aggregation risk from structure-derived descriptors.
 
-HCNP maps structure-derived antibody descriptors into effective
-`DeltaMu_proxy` and `gamma_proxy`, then into a CNT-like nucleation barrier and
-`hcnp_risk_score`. The public claim is deliberately limited: this is a static
-surface-thermodynamic screening workflow, not a state-of-the-art predictor and
-not a production simulation workflow.
-
-## Two Run Modes
-
-### 1. Locked Method 01 Mode
-
-This is the benchmark-equivalent path. It scores a descriptor manifest generated
-from the same kind of PyRosetta/CNT structure features used by the internal
-notebook.
-
-```bash
-python scripts/build_feature_manifest.py \
-  --surface-predictions surface_predictions.csv \
-  --cnt-predictions cnt_predictions.csv \
-  --panel optional_panel_without_labels.csv \
-  --out hcnp_feature_manifest.csv
-
-abthermo-screen \
-  --feature-manifest hcnp_feature_manifest.csv \
-  --out hcnp_scores.csv
-```
-
-This mode does not use labels during scoring.
-
-### 2. Lightweight PDB Mode
-
-This mode accepts PDB files directly and computes an open, approximate surface
-descriptor set from coordinates. It is useful for exploratory screening, but it
-is **not** the frozen reliable-30 benchmark-equivalent score path.
-
-```bash
-abthermo-screen \
-  --pdb ./pdbs/example_fab.pdb \
-  --heavy-chain H \
-  --light-chain L \
-  --out aggregation_scores.csv
-```
-
-For a directory:
-
-```bash
-abthermo-screen \
-  --pdb-dir ./pdbs \
-  --heavy-chain H \
-  --light-chain L \
-  --out aggregation_scores.csv
-```
-
-For a PDB manifest:
-
-```bash
-abthermo-screen \
-  --manifest examples/manifest_template.csv \
-  --out aggregation_scores.csv
-```
-
-Manifest columns:
-
-```text
-pdb_path,antibody_id,pdb_id,heavy_chain,light_chain
-```
-
-Only `pdb_path` is required. Explicit heavy/light chain IDs are recommended for
-antibody-antigen structures.
+The model is a physically motivated proxy, not a first-principles simulation.
+It maps antibody surface information into an effective association drive,
+an effective interfacial penalty, a CNT-like nucleation barrier, and a bounded
+risk score.
 
 ## Install
 
@@ -84,105 +19,75 @@ pip install -e .
 
 Python 3.10+ is recommended.
 
-## Thermodynamic Core
+## Python Usage
 
-The feature-to-score path is:
+```python
+import pandas as pd
 
-```text
-structure descriptors
--> hydrophobic / curvature / hidden-hydrophobic terms
--> DeltaMu_proxy and gamma_proxy
--> CNT-like barrier
--> hcnp_risk_score
+from abthermo_aggregation.pdb_surface import compute_surface_descriptors
+from abthermo_aggregation.scoring import add_batch_scores
+
+descriptor = compute_surface_descriptors(
+    "example_fab.pdb",
+    heavy_chain="H",
+    light_chain="L",
+)
+
+scores = add_batch_scores(pd.DataFrame([descriptor]))
+print(scores[["thermodynamic_risk_score", "DeltaG_star_kT", "risk_rank"]])
 ```
 
-Hydrophobic curvature enters as:
+For a table of precomputed descriptor features:
 
-\[
-C_{h\kappa}^{\mathrm{proxy}}
-=\max(0,z_{\mathrm{rough}})
-\left[1+0.25\max(0,z_h)\right].
-\]
+```python
+import pandas as pd
 
-The validated Method 01 barrier keeps the original small electrostatic
-regularizer:
+from abthermo_aggregation.thermodynamic_model import add_thermodynamic_model_scores
+
+features = pd.read_csv("feature_table.csv")
+scores = add_thermodynamic_model_scores(features)
+```
+
+## Model Form
+
+The thermodynamic model uses a CNT-like barrier:
 
 \[
 \Delta G(n)=
-\gamma_{\mathrm{proxy}}n^{2/3}
+\gamma_{\mathrm{proxy}} n^{2/3}
 -n|\Delta\mu_{\mathrm{proxy}}|
-+\lambda_{\mathrm{elec}}n^{1/3}.
++\lambda_{\mathrm{elec}} n^{1/3}.
 \]
 
-The last term is **not** claimed as a clean first-principles CNT term. It is an
-empirical electrostatic regularizer retained from the frozen Method 01 score.
-Because charge already contributes to `gamma_proxy`, this term is partly
-redundant from a strict thermodynamic standpoint. I tested the textbook-clean
-version without the last term; it did **not** pass the frozen binary gate, so the
-regularized version remains the accepted Method 01 score.
+Here \(n\) is the cluster size, \(\Delta\mu_{\mathrm{proxy}}\) is an effective
+association drive, and \(\gamma_{\mathrm{proxy}}\) is an effective interfacial
+penalty.  The electrostatic term is a fixed proxy correction, not a separate
+first-principles free-energy law.
 
-## Output Schema
+The reported score is a monotonic transform of the barrier:
 
-Key output columns:
+\[
+S=
+\frac{1}{1+\exp[(\Delta G^*/k_BT-10)/4]}.
+\]
 
-- `antibody_id`
-- `pdb_id`
-- `DeltaG_assoc_proxy`
-- `DeltaMu_proxy`
-- `gamma_proxy`
-- `n_star`
-- `DeltaG_star_kT`
-- `hcnp_risk_score`
-- `risk_rank`
-- `thermo_call`
+This score should be interpreted as a ranking coordinate: lower barriers give
+higher predicted aggregation risk.
 
-Locked mode also reports:
+## Inputs
 
-- `DeltaG_unfold_proxy`
-- `DeltaG_dewetting`
-- `local_patch_correction_proxy`
-- `latent_aggregation_drive`
-- `surface_curvature_roughness_z`
-- `hydrophobic_curvature_coupling`
-- `curvature_gamma_discount`
-- `electrostatic_regularizer_kcal`
+The direct structure path uses:
 
-## Benchmark Summary
+- `pdb_path`
+- `heavy_chain`
+- `light_chain`
 
-Frozen internal Method 01 reference on the reliable-30 public-structure panel:
+The descriptor-table path expects columns describing hydrophobic exposure,
+charge, interface terms, roughness, and CNT-style intermediate quantities.
 
-```text
-accuracy = 0.867
-TP = 5
-TN = 21
-FP = 2
-FN = 2
-balanced_accuracy = 0.814
-```
+## Important Limits
 
-The copied locked scorer reproduces this result using the same threshold
-(`hcnp_risk_score >= 0.861656`, with a small floating-point tolerance).
-
-Pearson-first correlation check against mapped FLAb numeric assays under the
-same local validation script:
-
-```text
-AC-SINS:   Pearson = 0.335, Spearman = 0.255, n = 30
-SGAC-SINS: Pearson = 0.452, Spearman = 0.498, n = 30
-```
-
-For continuous FLAb assay values, Pearson correlation is treated as the primary
-validation metric because it tests whether changes in `hcnp_risk_score` track
-the assay magnitude. Spearman correlation is still reported as a secondary
-rank-robustness check.
-
-The lightweight PDB-only approximation did not pass the reliable-30 acceptance
-gate (`accuracy = 0.667`, `FP = 4`, `FN = 6`), so it is kept only as an
-exploratory open fallback.
-
-## Limitations
-
-HCNP is a screening/ranking proxy. It is sensitive to structure quality, chain
-selection, missing residues, glycosylation handling, and batch composition. Use
-it to prioritize antibodies for deeper biophysical analysis, not as a final CMC
-decision rule.
+The thermodynamic model is a screening tool.  It does not replace experimental
+developability assays, molecular dynamics, or formulation-specific CMC studies.
+The numerical weights are fixed project-calibrated proxy weights, not measured
+thermodynamic constants.

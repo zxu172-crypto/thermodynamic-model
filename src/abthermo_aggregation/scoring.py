@@ -1,4 +1,4 @@
-"""HCNP thermodynamic and statistical-mechanics scoring functions."""
+"""Thermodynamic model scoring functions."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pandas as pd
 
 
 R_KCAL_PER_MOL_K = 0.0019872043
-DEFAULT_HCNP_THRESHOLD = 0.8616561363652143
+DEFAULT_THERMODYNAMIC_MODEL_THRESHOLD = 0.8616561363652143
 THRESHOLD_EPSILON = 1e-12
 
 
@@ -24,9 +24,9 @@ def zscore(values: pd.Series) -> pd.Series:
 def add_batch_scores(
     descriptor_df: pd.DataFrame,
     temperature_K: float = 313.0,
-    hcnp_threshold: float = DEFAULT_HCNP_THRESHOLD,
+    risk_threshold: float = DEFAULT_THERMODYNAMIC_MODEL_THRESHOLD,
 ) -> pd.DataFrame:
-    """Add HCNP thermodynamic scores to a batch of surface descriptors.
+    """Add thermodynamic model scores to a batch of surface descriptors.
 
     Scores are designed for ranking batches. Single-structure runs still produce
     raw descriptors and a score, but z-score terms are necessarily zero.
@@ -78,9 +78,9 @@ def add_batch_scores(
     out["n_star"] = [item["n_star"] for item in barriers]
     out["DeltaG_star_kcal_mol"] = [item["DeltaG_star_kcal_mol"] for item in barriers]
     out["DeltaG_star_kT"] = [item["DeltaG_star_kT"] for item in barriers]
-    out["hcnp_risk_score"] = 1.0 / (1.0 + np.exp((out["DeltaG_star_kT"] - 10.0) / 4.0))
-    out["risk_rank"] = out["hcnp_risk_score"].map(_risk_rank)
-    out["thermo_call"] = (out["hcnp_risk_score"] >= hcnp_threshold - THRESHOLD_EPSILON).astype(int)
+    out["thermodynamic_risk_score"] = 1.0 / (1.0 + np.exp((out["DeltaG_star_kT"] - 10.0) / 4.0))
+    out["risk_rank"] = out["thermodynamic_risk_score"].map(_risk_rank)
+    out["thermo_call"] = (out["thermodynamic_risk_score"] >= risk_threshold - THRESHOLD_EPSILON).astype(int)
 
     return out
 

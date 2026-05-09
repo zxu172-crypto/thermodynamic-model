@@ -1,9 +1,8 @@
-"""Locked HCNP design-proxy scoring path.
+"""Frozen thermodynamic model design-proxy scoring path.
 
-This module implements the validated Method 01 HCNP feature-to-score contract.
+This module implements the frozen thermodynamic model feature-to-score contract.
 It expects a table of structure-derived descriptors, not labels. The descriptors
-can come from PyRosetta/CNT preprocessing or another pipeline that produces the
-same columns.
+can come from any preprocessing pipeline that produces the same columns.
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ import math
 
 import pandas as pd
 
-from .scoring import DEFAULT_HCNP_THRESHOLD, R_KCAL_PER_MOL_K, THRESHOLD_EPSILON
+from .scoring import DEFAULT_THERMODYNAMIC_MODEL_THRESHOLD, R_KCAL_PER_MOL_K, THRESHOLD_EPSILON
 
 
 FEATURE_COLUMNS = [
@@ -37,21 +36,21 @@ FEATURE_COLUMNS = [
 ]
 
 
-def add_locked_hcnp_scores(
+def add_thermodynamic_model_scores(
     feature_df: pd.DataFrame,
     temperature_K: float = 313.0,
-    hcnp_threshold: float = DEFAULT_HCNP_THRESHOLD,
+    risk_threshold: float = DEFAULT_THERMODYNAMIC_MODEL_THRESHOLD,
     include_electrostatic_regularizer: bool = True,
 ) -> pd.DataFrame:
-    """Score an HCNP descriptor table without using labels or benchmarks."""
+    """Score a descriptor table without using labels."""
 
     missing = [column for column in FEATURE_COLUMNS if column not in feature_df.columns]
     if missing:
-        raise ValueError(f"Feature manifest is missing required HCNP columns: {missing}")
+        raise ValueError(f"Feature manifest is missing required thermodynamic model columns: {missing}")
 
     rows = []
     for row in feature_df.to_dict(orient="records"):
-        scored = locked_hcnp_design_proxy(
+        scored = thermodynamic_model_proxy(
             row,
             temperature_K=temperature_K,
             include_electrostatic_regularizer=include_electrostatic_regularizer,
@@ -59,18 +58,18 @@ def add_locked_hcnp_scores(
         rows.append({**row, **scored})
 
     out = pd.DataFrame(rows)
-    out["thermo_call"] = (out["hcnp_risk_score"] >= hcnp_threshold - THRESHOLD_EPSILON).astype(int)
+    out["thermo_call"] = (out["thermodynamic_risk_score"] >= risk_threshold - THRESHOLD_EPSILON).astype(int)
     return out
 
 
-def locked_hcnp_design_proxy(
+def thermodynamic_model_proxy(
     features: dict,
     temperature_K: float = 313.0,
     ionic_strength_mM: float = 150.0,
     surface_context: str = "bulk",
     include_electrostatic_regularizer: bool = True,
 ) -> dict[str, float | int | str]:
-    """Map structure descriptors into the validated HCNP nucleation proxy."""
+    """Map structure descriptors into the thermodynamic model nucleation proxy."""
 
     kBT = R_KCAL_PER_MOL_K * temperature_K
     patch = _to_float(features["patch_hydrophobic"], 0.0)
@@ -133,7 +132,7 @@ def locked_hcnp_design_proxy(
     )
 
     ionic_screen = math.sqrt(max(float(ionic_strength_mM), 1.0) / 150.0)
-    # Empirical regularizer retained for frozen Method 01 score compatibility.
+    # Empirical regularizer retained for frozen thermodynamic model compatibility.
     # It partially overlaps with the charge contribution in gamma_proxy, so it
     # should not be presented as an independent first-principles electrostatic
     # free-energy term.
@@ -172,7 +171,7 @@ def locked_hcnp_design_proxy(
         "DeltaG_star_kcal_mol": nuc["DeltaG_star_kcal_mol"],
         "DeltaG_star_kT": nuc["DeltaG_star_kT"],
         "k_nuc_relative": nuc["k_nuc_relative"],
-        "hcnp_risk_score": risk_score,
+        "thermodynamic_risk_score": risk_score,
         "aggregation_pathway": classify_pathway(delta_g_unfold_proxy, favorable_interface_reu, dsasa, electrostatic_penalty),
         "risk_rank": risk_rank(risk_score),
     }

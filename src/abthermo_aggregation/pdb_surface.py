@@ -1,6 +1,6 @@
 """PDB parsing and molecular-surface descriptors.
 
-This module intentionally avoids benchmark-specific files. It computes local
+This module intentionally avoids external data files. It computes local
 surface geometry directly from PDB atom coordinates.
 """
 
