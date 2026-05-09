@@ -5,5 +5,7 @@ __pycache__/
 *.csv
 !examples/manifest_template.csv
 *.pdb
+!examples/pdbs/
+!examples/pdbs/5VH3.pdb
 *.cif
 outputs/

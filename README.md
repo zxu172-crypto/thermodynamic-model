@@ -1,93 +1,112 @@
 # thermodynamic model
 
-This repository contains a thermodynamic model for screening antibody
-aggregation risk from structure-derived descriptors.
+This repository provides one user-facing workflow:
 
-The model is a physically motivated proxy, not a first-principles simulation.
-It maps antibody surface information into an effective association drive,
-an effective interfacial penalty, a CNT-like nucleation barrier, and a bounded
-risk score.
+```text
+notebooks/thermodynamic_model_prediction.ipynb
+```
 
-## Install
+Open that notebook, put in a PDB file or a folder of PDB files, and run the
+cells. The notebook returns:
+
+- `thermodynamic_risk_score`: primary ranking score; higher means higher
+  predicted aggregation risk
+- `risk_rank`: low, medium, or high
+- `thermo_call`: thresholded screening call; `1` means predicted high risk,
+  `0` means predicted lower risk
+- `DeltaMu_proxy`, `gamma_proxy`, and `DeltaG_star_kT`: the thermodynamic
+  quantities behind the score
+
+## Quick Start
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
+jupyter notebook notebooks/thermodynamic_model_prediction.ipynb
 ```
 
-Python 3.10+ is recommended.
+The notebook ships with one example PDB:
 
-## Python Usage
+```text
+examples/pdbs/5VH3.pdb
+```
+
+To use your own antibody, edit only the first input cell:
 
 ```python
-import pandas as pd
-
-from abthermo_aggregation.pdb_surface import compute_surface_descriptors
-from abthermo_aggregation.scoring import add_batch_scores
-
-descriptor = compute_surface_descriptors(
-    "example_fab.pdb",
-    heavy_chain="H",
-    light_chain="L",
-)
-
-scores = add_batch_scores(pd.DataFrame([descriptor]))
-print(scores[["thermodynamic_risk_score", "DeltaG_star_kT", "risk_rank"]])
+INPUT_MODE = "pdb_file"
+INPUT_PATH = "/path/to/your_antibody.pdb"
+HEAVY_CHAIN = "H"
+LIGHT_CHAIN = "L"
 ```
 
-For a table of precomputed descriptor features:
+For a folder:
 
 ```python
-import pandas as pd
-
-from abthermo_aggregation.thermodynamic_model import add_thermodynamic_model_scores
-
-features = pd.read_csv("feature_table.csv")
-scores = add_thermodynamic_model_scores(features)
+INPUT_MODE = "pdb_directory"
+INPUT_PATH = "/path/to/pdb_folder"
 ```
 
-## Model Form
+For a manifest:
 
-The thermodynamic model uses a CNT-like barrier:
+```python
+INPUT_MODE = "manifest"
+INPUT_PATH = "/path/to/manifest.csv"
+```
+
+Manifest columns:
+
+```text
+pdb_path,antibody_id,pdb_id,heavy_chain,light_chain
+```
+
+Only `pdb_path` is strictly required, but chain IDs are recommended.
+
+## Model Concept
+
+The model treats antibody aggregation as a nucleation-like thermodynamic
+screening problem. Structure-derived surface features are mapped into:
 
 \[
-\Delta G(n)=
-\gamma_{\mathrm{proxy}} n^{2/3}
--n|\Delta\mu_{\mathrm{proxy}}|
-+\lambda_{\mathrm{elec}} n^{1/3}.
+\Delta\mu_{\mathrm{proxy}}
 \]
 
-Here \(n\) is the cluster size, \(\Delta\mu_{\mathrm{proxy}}\) is an effective
-association drive, and \(\gamma_{\mathrm{proxy}}\) is an effective interfacial
-penalty.  The electrostatic term is a fixed proxy correction, not a separate
-first-principles free-energy law.
-
-The reported score is a monotonic transform of the barrier:
+and:
 
 \[
-S=
-\frac{1}{1+\exp[(\Delta G^*/k_BT-10)/4]}.
+\gamma_{\mathrm{proxy}}.
 \]
 
-This score should be interpreted as a ranking coordinate: lower barriers give
-higher predicted aggregation risk.
+The notebook then evaluates:
 
-## Inputs
+\[
+\Delta G(n)=\gamma_{\mathrm{proxy}}n^{2/3}-n|\Delta\mu_{\mathrm{proxy}}|
+\]
 
-The direct structure path uses:
+and converts the nucleation barrier into a bounded risk score. The score should
+be used primarily for ranking antibodies. The pass/non-pass call is a secondary
+thresholded screening decision.
 
-- `pdb_path`
-- `heavy_chain`
-- `light_chain`
+## Reference Result
 
-The descriptor-table path expects columns describing hydrophobic exposure,
-charge, interface terms, roughness, and CNT-style intermediate quantities.
+The internal reliable-30 benchmark for the locked thermodynamic model was:
 
-## Important Limits
+```text
+accuracy = 0.867
+TP = 5
+TN = 21
+FP = 2
+FN = 2
+balanced accuracy = 0.814
+```
 
-The thermodynamic model is a screening tool.  It does not replace experimental
-developability assays, molecular dynamics, or formulation-specific CMC studies.
-The numerical weights are fixed project-calibrated proxy weights, not measured
-thermodynamic constants.
+This benchmark is included as context, not as a claim that the model is a final
+CMC decision rule.
+
+## Limitations
+
+This is a fast screening model, not molecular dynamics, quantum chemistry, or a
+replacement for experimental developability assays. Results depend on PDB
+quality, chain selection, missing loops, bound antigen, and formulation context.
